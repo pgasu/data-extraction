@@ -98,7 +98,7 @@ if __name__=='__main__':
 			genus = row['genus.x']
 			synonyms = (row['Genus synonyms'] + '|' + genus).split('|')
 			common_names = [name for name in ((row['Main common name'] + '|' + row['Other common names']).split('|')) if row['Excluded names']=='' or name not in (row['Excluded names'].split('|'))]
-			
+			common_names = [name for name in common_names if name]
 			search_query = '(Virus OR viruses OR viral) AND ('
 			if len(common_names)>0:
 				for name in common_names:
@@ -108,9 +108,8 @@ if __name__=='__main__':
 				search_query += '"' + genus_syn + '" OR '
 			search_query = search_query[0:-4]
 			search_query += ')'
-
 			print(search_query)
-			#search_query = '(Virus OR viruses OR viral) AND (Aplodontia rufa OR Aplodontia leporina OR Aplodontia californica OR "Aplodontia major" OR "Aplodontia olympica" OR "Aplodontia pacifica" OR "Aplodontia phaea" OR "Aplodontia rainieri" OR "Aplodontia chryseola" OR "Aplodontia nigra" OR "Aplodontia columbiana" OR "Aplodontia grisea" OR "Aplodontia humboldtiana" OR "Mountain Beaver" OR "Sewellel" OR "Point Arena Mountain Beaver" OR "Point Reyes Mountain Beaver" OR "Haploodus nigra" OR "Haploodus leporina" OR "Haploodus phaea" OR "Haploodus olympica" OR "Haploodus humboldtiana" OR "Haploodus rufa" OR "Haploodus grisea" OR "Haploodus major" OR "Haploodus chryseola" OR "Haploodus californica" OR "Haploodus columbiana" OR "Haploodus pacifica" OR "Haploodus rainieri")'
+
 			parameters = {
 				'tool':'ASU_BioKIC',
 				'email':'prashant.gupta.2@asu.edu',
@@ -121,15 +120,16 @@ if __name__=='__main__':
 				'retmode':'json'	
 				}
 			response = requests.post('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', params=parameters)
-			print(response.json()['esearchresult']['idlist'])
-
 			id_list = response.json()['esearchresult']['idlist']
+			id_list = [int(idx) for idx in id_list]
 
-			ids = [int(idx) for idx in id_list]
-			print(ids)
+			print(len(id_list))
 
 			params = {
-				'id': ids,
+				'tool':'ASU_BioKIC',
+				'email':'prashant.gupta.2@asu.edu',
+				'api_key':api_key,
+				'id': id_list,
 				'download':'Y',
 				'format':'ris'
 			}
@@ -137,7 +137,7 @@ if __name__=='__main__':
 			print(response)
 			filename = genus + '.ris'
 			open(filename, 'wb').write(response.content)
-			time.sleep(1)
+			time.sleep(5)
 
 
 			
