@@ -112,12 +112,13 @@ if __name__=='__main__':
 	# 		excluded_names = value[3]
 	# 		writer.writerow({'genus.x': key, 'Genus synonyms':genus_syns,'Main common name': main_common_name, 'Other common names': other_common_name, 'Excluded names': excluded_names})
 
+	response_to_queries ={}
 
 	with open('NAm_Rodent_Lit_Search_Genus.csv') as f:
 		rows = csv.DictReader(f)
 		for row in rows:
 			genus = row['genus.x']
-			synonyms = (row['Genus synonyms'] + '|' + genus).split('|')
+			synonyms = row['Genus synonyms'].split('|')
 			common_names = [name for name in ((row['Main common name'] + '|' + row['Other common names']).split('|')) if row['Excluded names']=='' or name not in (row['Excluded names'].split('|'))]
 			common_names = [name for name in common_names if name]
 			search_query = '(Virus OR viruses OR viral) AND ('
@@ -129,7 +130,6 @@ if __name__=='__main__':
 				search_query += '"' + genus_syn + '" OR '
 			search_query = search_query[0:-4]
 			search_query += ')'
-			print(search_query)
 
 			parameters = {
 				'tool':'ASU_BioKIC',
@@ -144,7 +144,7 @@ if __name__=='__main__':
 			id_list = response.json()['esearchresult']['idlist']
 			id_list = [int(idx) for idx in id_list]
 
-			print(len(id_list))
+			response_to_queries[genus] = [len(id_list)]
 
 			params = {
 				'tool':'ASU_BioKIC',
@@ -156,9 +156,15 @@ if __name__=='__main__':
 			}
 			response = requests.get('https://api.ncbi.nlm.nih.gov/lit/ctxp/v1/pmc', params=params)
 			print(response)
+			if response.status_code == 414:
+				response_to_queries[genus].append('Status_code: 414')
+				continue
 			filename = genus + '.ris'
 			open(filename, 'wb').write(response.content)
-			time.sleep(5)
+			response_to_queries[genus].append(filename)
+
+	print(response_to_queries)
+
 
 
 			
