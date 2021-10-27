@@ -6,6 +6,7 @@ import csv
 import time
 import pandas as pd
 from requests.exceptions import ConnectionError
+from query_util import create_genus_intersection_common_names_query, create_genus_union_common_names_query
 
 api_key = '310a232c07175b642551785374fdecd7e508'
 species_synonyms = {}
@@ -60,6 +61,8 @@ def get_synonyms_list_per_genus(filename):
 				genus_synonyms[genus] = [row['synonym']]
 
 		return genus_synonyms
+
+
 
 
 if __name__=='__main__':
@@ -175,20 +178,7 @@ if __name__=='__main__':
 	with open('NAm_Rodent_Lit_Search_Genus.csv') as f:
 		rows = csv.DictReader(f)
 		for row in rows:
-			genus = row['genus.x']
-			synonyms = row['Genus synonyms'].split('|')
-			common_names = row['Main common name'] if row['Other common names']=="" else row['Main common name'] + '|' + row['Other common names']
-			common_names = [name for name in common_names.split('|') if row['Excluded names']=='' or name not in (row['Excluded names'].split('|'))]
-			common_names = [name for name in common_names if name]
-			search_query = '(Virus OR viruses OR viral) AND ('
-			if len(common_names)>0:
-				for name in common_names:
-					search_query += '"' + name + '" OR '
-
-			for genus_syn in synonyms:
-				search_query += '"' + genus_syn + '" OR '
-			search_query = search_query[0:-4]
-			search_query += ')'
+			search_query = create_genus_union_common_names_query(row)
 
 			parameters = {
 				'tool':'Data_extraction/0.1.0',
@@ -199,13 +189,28 @@ if __name__=='__main__':
 				'retmax':100000,
 				'retmode':'json'	
 				}
-			response = requests.post('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', params=parameters)
-			id_list = response.json()['esearchresult']['idlist']
-			id_list = [int(idx) for idx in id_list]
-			response_to_queries[genus] = [genus, row['Genus synonyms'], row['Main common name'], row['Other common names'], row['Excluded names'], search_query, id_list]
+			try:
+				response = requests.post('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', params=parameters)
+				id_list = response.json()['esearchresult']['idlist']
+				id_list = [int(idx) for idx in id_list]
+				response_to_queries[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], row['Main common name'], row['Other common names'], row['Excluded names'], search_query, id_list]
+			except JSONDecodeError as e:
+				print(e)
+				print(response.content)
+				print(search_query)
+
+	all_ids = []
+	unique_ids = []
+	for key, value in response_to_queries.items():
+		if (len(value[6])<500):
+			all_ids.extend(value[6])
+	unique_ids = list(set(all_ids))
+	print(len(all_ids), len(unique_ids))
+
+
 
 	updated_file = {}
-	citations_file = open('genus_combined_citations.ris', 'ab+')
+	citations_file = open('genus_combined_citations_new.ris', 'ab+')
 	while True:
 		print("New run")
 		missed_keys = False
