@@ -7,86 +7,13 @@ import time
 import pandas as pd
 from requests.exceptions import ConnectionError
 from query_util import create_genus_intersection_common_names_query, create_genus_union_common_names_query
-
-api_key = '310a232c07175b642551785374fdecd7e508'
-species_synonyms = {}
-genus_synonyms = {}
-
-def get_synonyms_list_per_species(filename):
-	"""
-	The argument (filename) should be a csv file with required columns: 'genus.x', 'specificEpithet.x', 'synonym', 'Synonym edits', 'mainCommonName', 'otherCommonNames'
-	and 'Excluded names'. 
-	The csv file  displays synonyms for a species on separate rows. The function lumps synonyms for each species and creates a dictionary mapping each species
-	to a list of its synonyms and other properties, and return the dictionary
-	"""
-
-	species_synonyms = {}
-
-	with open(filename) as f:
-		rows = csv.DictReader(f)
-		for row in rows:
-			genus = row['genus.x']
-			epithet = row['specificEpithet.x']
-			synonyms = row['synonym']
-			synonym_edit = row['Synonym edits']
-			main_common_name = row['mainCommonName']
-			other_common_name = row['otherCommonNames']
-			excluded_names = row['Excluded names']
-
-			genus_plus_epithet = genus + " " + epithet
-			if genus_plus_epithet in species_synonyms:
-				species_synonyms[genus_plus_epithet][0] += "|" + synonyms
-			else:
-				species_synonyms[genus_plus_epithet] = [synonyms, synonym_edit, main_common_name, other_common_name, excluded_names]
-
-		return species_synonyms
-
-
-def get_synonyms_list_per_genus(filename):
-	"""
-	The function creates and returns a dictionary mapping each genus to a list of its synonyms
-	The argument (filename) should be a csv file with required columns: 'genus', and 'synonym'
-	"""
-
-	genus_synonyms = {}
-
-	with open(filename) as f:
-		rows = csv.DictReader(f)
-		for row in rows:
-			genus = row['genus']
-
-			if genus in genus_synonyms:
-				genus_synonyms[genus].append(row['synonym'])
-			else:
-				genus_synonyms[genus] = [row['synonym']]
-
-		return genus_synonyms
-
-
+from api_call import pmc_api_search_article_ids
+from csv_util import standardize_csvfile
 
 
 if __name__=='__main__':
 
-	# species_synonyms = get_synonyms_list_per_species('NAm_Rodent_Lit_Search_MDD_v1.6_allSynonyms.csv')
-	# genus_synonyms = get_synonyms_list_per_genus('MDD_genus_syn_8Oct2021_NAmRodentia.csv')
-
-# Create a new file for species lumping all synonyms for each species in a single row
-	# with open('NAm_Rodent_Lit_Search_All_Synonyms.csv', 'w', newline='') as f:
-	# 	fieldnames = ['genus.x', 'specificEpithet.x', 'Genus synonyms', 'Epithet synonyms', 'Synonym edits', 'Main common name', 'Other common names', 'Excluded names']
-	# 	writer = csv.DictWriter(f, fieldnames=fieldnames)
-	# 	writer.writeheader()
-	#	
-	# 	for key, value in species_synonyms.items():
-	# 		genus, epithet = key.split()
-	# 		epithet_synonyms = value[0]
-	# 		genus_syns = '|'.join(genus_synonyms[genus])
-	# 		synonym_edits = value[1]
-	# 		main_common_name = value[2]
-	# 		other_common_name = value[3]
-	# 		excluded_names = value[4]
-	# 		writer.writerow({'genus.x': genus, 'specificEpithet.x': epithet, 'Genus synonyms':genus_syns, 'Epithet synonyms':epithet_synonyms, 'Synonym edits':synonym_edits,
-	# 		 				'Main common name': main_common_name, 'Other common names': other_common_name, 'Excluded names': excluded_names})
-
+	standardize_csvfile('MDD_v1.6_allSynonyms_NAm_Rodentia.csv')
 
 # Create a new file for Genus level queries lumping all main and other common names (per genus)
 	# genus_common_names = {}
@@ -175,29 +102,15 @@ if __name__=='__main__':
 		# time.sleep(5)
 
 	response_to_queries ={}
-	with open('NAm_Rodent_Lit_Search_Genus.csv') as f:
+	with open('NAm_Rodent_Lit_Search_Species.csv') as f:
 		rows = csv.DictReader(f)
 		for row in rows:
 			search_query = create_genus_union_common_names_query(row)
-
-			parameters = {
-				'tool':'Data_extraction/0.1.0',
-				'email':'pgupt109@asu.edu',
-				'api_key':api_key,
-				'db': 'pmc',
-				'term': search_query,
-				'retmax':100000,
-				'retmode':'json'	
-				}
-			try:
-				response = requests.post('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', params=parameters)
-				id_list = response.json()['esearchresult']['idlist']
-				id_list = [int(idx) for idx in id_list]
-				response_to_queries[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], row['Main common name'], row['Other common names'], row['Excluded names'], search_query, id_list]
-			except JSONDecodeError as e:
-				print(e)
-				print(response.content)
-				print(search_query)
+			api_response = pmc_api_search_article_ids(search_query)
+			if type(api_response)==list:
+				response_to_queries[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], row['Main common name'], row['Other common names'], row['Excluded names'], search_query, api_response]
+			else:
+				print(api_response)
 
 	all_ids = []
 	unique_ids = []
