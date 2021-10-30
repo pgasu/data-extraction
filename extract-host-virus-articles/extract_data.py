@@ -6,14 +6,15 @@ import csv
 import time
 import pandas as pd
 from requests.exceptions import ConnectionError
-from query_util import create_genus_intersection_common_names_query, create_genus_union_common_names_query
-from api_call import pmc_api_search_article_ids
+from query_util import create_genus_intersection_common_names_query, create_genus_union_common_names_query, create_scientific_name_union_common_names_query, \
+decompose_genus_union_common_names_query, decompose_scientific_name_union_common_names_query
+from api_call import pmc_api_search_article_ids, pmc_multiple_api_call
 from csv_util import standardize_csvfile
 
 
 if __name__=='__main__':
 
-	standardize_csvfile('MDD_v1.6_allSynonyms_NAm_Rodentia.csv')
+	# standardize_csvfile('MDD_v1.6_allSynonyms_NAm_Rodentia.csv')
 
 # Create a new file for Genus level queries lumping all main and other common names (per genus)
 	# genus_common_names = {}
@@ -102,66 +103,92 @@ if __name__=='__main__':
 		# time.sleep(5)
 
 	response_to_queries ={}
-	with open('NAm_Rodent_Lit_Search_Species.csv') as f:
-		rows = csv.DictReader(f)
+	genus_with_irregular_results = []
+	with open('NAm_Rodent_Lit_Search_All_Synonyms.csv') as f:
+		rows = list(csv.DictReader(f))
+		print(type(rows))
 		for row in rows:
+			# If a genus has already been queried, then we let it pass for subsequent rows - the same genus may appear in multiple rows as each row represents a specific species
+			if row['genus.x'] in response_to_queries or row['genus.x'] in genus_with_irregular_results:
+				continue
 			search_query = create_genus_union_common_names_query(row)
 			api_response = pmc_api_search_article_ids(search_query)
-			if type(api_response)==list:
-				response_to_queries[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], row['Main common name'], row['Other common names'], row['Excluded names'], search_query, api_response]
+			if type(api_response) != list and api_response.status_code == 414:
+				list_of_smaller_search_queries = decompose_genus_union_common_names_query(row)
+				api_response = pmc_multiple_api_call(list_of_smaller_search_queries)
+
+			if type(api_response)==list and len(api_response)>500:
+				genus_with_irregular_results.append(row['genus.x'])
 			else:
-				print(api_response)
+				response_to_queries[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], row['Main common name'], row['Other common names'], row['Excluded names'], search_query, api_response]
+
+
+		for row in rows:
+			if row['genus.x'] in genus_with_irregular_results:
+				search_query = create_scientific_name_union_common_names_query(row)
+				api_response = pmc_api_search_article_ids(search_query)
+				if type(api_response) != list and api_response.status_code == 414:
+					"I am in"
+					list_of_smaller_search_queries = decompose_scientific_name_union_common_names_query(row)
+					api_response = pmc_multiple_api_call(list_of_smaller_search_queries)
+					print(api_response)
+
+				if row['genus.x'] in response_to_queries:
+					response_to_queries[row['genus.x']][6].extend(api_response)
+				else:
+					response_to_queries[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], row['Main common name'], row['Other common names'], row['Excluded names'], search_query, api_response]
+
 
 	all_ids = []
 	unique_ids = []
 	for key, value in response_to_queries.items():
-		if (len(value[6])<500):
-			all_ids.extend(value[6])
+		# if (len(value[6])<500):
+		all_ids.extend(value[6])
 	unique_ids = list(set(all_ids))
 	print(len(all_ids), len(unique_ids))
 
 
 
-	updated_file = {}
-	citations_file = open('genus_combined_citations_new.ris', 'ab+')
-	while True:
-		print("New run")
-		missed_keys = False
-		for key, value in response_to_queries.items():
-			if (key in updated_file and len(updated_file[key])==8):
-				continue
+	# updated_file = {}
+	# citations_file = open('genus_combined_citations_new.ris', 'ab+')
+	# while True:
+	# 	print("New run")
+	# 	missed_keys = False
+	# 	for key, value in response_to_queries.items():
+	# 		if (key in updated_file and len(updated_file[key])==8):
+	# 			continue
 
-			id_list = value[6]
+	# 		id_list = value[6]
 
-			headers = {
-				'tool':'Data_extraction/0.1.0',
-				'email':'pgupt109@asu.edu'
-			}
-			params = {
-				'id': id_list,
-				'download':'Y',
-				'format':'ris'
-			}
-			try:
-				response = requests.get('https://api.ncbi.nlm.nih.gov/lit/ctxp/v1/pmc', params=params, headers=headers)
-				updated_file[key] = value
-				print(key, response.status_code, len(value))
-				if response.status_code != 200:
-					updated_file[key].append('Status_code: '+str(response.status_code))
-					continue
-				filename = key + '.ris'
-				# open(filename, 'wb').write(response.content)
-				citations_file.write(response.content)
-				updated_file[key].append(filename)
-			except ConnectionError as e:
-				missed_keys = True
-				print(e)
-				time.sleep(10)
+	# 		headers = {
+	# 			'tool':'Data_extraction/0.1.0',
+	# 			'email':'pgupt109@asu.edu'
+	# 		}
+	# 		params = {
+	# 			'id': id_list,
+	# 			'download':'Y',
+	# 			'format':'ris'
+	# 		}
+	# 		try:
+	# 			response = requests.get('https://api.ncbi.nlm.nih.gov/lit/ctxp/v1/pmc', params=params, headers=headers)
+	# 			updated_file[key] = value
+	# 			print(key, response.status_code, len(value))
+	# 			if response.status_code != 200:
+	# 				updated_file[key].append('Status_code: '+str(response.status_code))
+	# 				continue
+	# 			filename = key + '.ris'
+	# 			# open(filename, 'wb').write(response.content)
+	# 			citations_file.write(response.content)
+	# 			updated_file[key].append(filename)
+	# 		except ConnectionError as e:
+	# 			missed_keys = True
+	# 			print(e)
+	# 			time.sleep(10)
 
 
-		if missed_keys == False:
-			break
-	citations_file.close()
+	# 	if missed_keys == False:
+	# 		break
+	# citations_file.close()
 
 
 	# with open('NAm_Rodent_Lit_Search_Genus.csv', 'w', newline='') as f:
