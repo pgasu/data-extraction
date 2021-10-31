@@ -6,111 +6,28 @@ import csv
 import time
 import pandas as pd
 from requests.exceptions import ConnectionError
-from query_util import create_genus_intersection_common_names_query, create_genus_union_common_names_query, create_scientific_name_union_common_names_query, \
-decompose_genus_union_common_names_query, decompose_scientific_name_union_common_names_query
+from query_util import query_database
 from api_call import pmc_api_search_article_ids, pmc_multiple_api_call
 from csv_util import standardize_csvfile
 
-
+#Query PMC and download citations of resulting articles as .ris file for each genus
 if __name__=='__main__':
 
-	# standardize_csvfile('MDD_v1.6_allSynonyms_NAm_Rodentia.csv')
-
-# Create a new file for Genus level queries lumping all main and other common names (per genus)
-	# genus_common_names = {}
-	# with open('NAm_Rodent_Lit_Search_All_Synonyms.csv') as f:
-	# 	rows = csv.DictReader(f)
-	# 	for row in rows:
-	# 		genus = row['genus.x']
-	# 		genus_syns = row['Genus synonyms']
-	# 		main_common_name = row['Main common name']
-	# 		other_common_name = row['Other common names']
-	# 		excluded_names = row['Excluded names']
-
-	# 		if genus in genus_common_names:
-	# 			genus_common_names[genus][1] += "|"+main_common_name
-	# 			if other_common_name != "":
-	# 				genus_common_names[genus][2] += "|"+other_common_name
-	# 		else:
-	# 			genus_common_names[genus] = [genus_syns, main_common_name, other_common_name, excluded_names]
-
-	# with open('NAm_Rodent_Lit_Search_Genus.csv', 'w', newline='') as f:
-	# 	fieldnames = ['genus.x', 'Genus synonyms', 'Main common name', 'Other common names', 'Excluded names']
-	# 	writer = csv.DictWriter(f, fieldnames=fieldnames)
-
-	# 	writer.writeheader()
-	# 	for key, value in genus_common_names.items():
-	# 		genus_syns = value[0]
-	# 		main_common_name = value[1]
-	# 		other_common_name = value[2]
-	# 		excluded_names = value[3]
-	# 		writer.writerow({'genus.x': key, 'Genus synonyms':genus_syns,'Main common name': main_common_name, 'Other common names': other_common_name, 'Excluded names': excluded_names})
-
-	
-	
-
-#Query PMC and download citations of resulting articles as .ris file for each genus
-
-	# df = pd.read_csv('NAm_Rodent_Lit_Search_Genus.csv')
-
-	# for index, row in df.iterrows():
-	# 	print(row['genus.x'])
-	# 	genus = row['genus.x']
-	# 	synonyms = row['Genus synonyms'].split('|')
-	# 	common_names = row['Main common name'] if pd.isnull(row['Other common names']) else row['Main common name'] + '|' + row['Other common names']
-	# 	common_names = [name for name in common_names.split('|') if pd.isnull(row['Excluded names']) or name not in (row['Excluded names'].split('|'))]
-	# 	search_query = '(Virus OR viruses OR viral) AND ('
-	# 	if len(common_names)>0:
-	# 		for name in common_names:
-	# 			search_query += '"' + name + '" OR '
-
-	# 	for genus_syn in synonyms:
-	# 		search_query += '"' + genus_syn + '" OR '
-	# 	search_query = search_query[0:-4]
-	# 	search_query += ')'
-
-	# 	parameters = {
-	# 		'tool':'ASU_BioKIC',
-	# 		'email':'prashant.gupta.2@asu.edu',
-	# 		'api_key':api_key,
-	# 		'db': 'pmc',
-	# 		'term': search_query,
-	# 		'retmax':100000,
-	# 		'retmode':'json'	
-	# 		}
-	# 	response = requests.post('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', params=parameters)
-	# 	id_list = response.json()['esearchresult']['idlist']
-	# 	id_list = [int(idx) for idx in id_list]
-	# 	df.at[index, "PubMed Central search query"] = search_query
-	# 	df.at[index, "Search result"] = len(id_list)
-		
-	# 	params = {
-	# 		'tool':'ASU_BioKIC',
-	# 		'email':'prashant.gupta.2@asu.edu',
-	# 		'api_key':api_key,
-	# 		'id': id_list,
-	# 		'download':'Y',
-	# 		'format':'ris'
-	# 	}
-	# 	response = requests.get('https://api.ncbi.nlm.nih.gov/lit/ctxp/v1/pmc', params=params)
-	# 	if response.status_code == 414:
-	# 		df.at[index, "Filename"] = "status_code: 414"
-	# 		continue
-	# 	filename = genus + '.ris'
-	# 	open(filename, 'wb').write(response.content)
-	# 	df.at[index, "Filename"] = filename
-	# 	df.to_csv('NAm_Rodent_Lit_Search_Genus.csv', index=False)
-		# time.sleep(5)
+	standardize_csvfile('MDD_v1.6_allSynonyms_NAm_Rodentia.csv')
 
 	response_to_queries ={}
 	genus_with_irregular_results = []
-	with open('NAm_Rodent_Lit_Search_All_Synonyms.csv') as f:
+
+	with open('NAm_Rodent_Lit_Search_Species.csv') as f:
 		rows = list(csv.DictReader(f))
-		print(type(rows))
+		search_result = query_database(rows, 'pmc')
+
 		for row in rows:
 			# If a genus has already been queried, then we let it pass for subsequent rows - the same genus may appear in multiple rows as each row represents a specific species
-			if row['genus.x'] in response_to_queries or row['genus.x'] in genus_with_irregular_results:
+			if row['genus.x'] in response_to_queries and row['genus.x'] not in genus_with_irregular_results:
 				continue
+			else if row['genus.x'] in genus_with_irregular_results:
+
 			search_query = create_genus_union_common_names_query(row)
 			api_response = pmc_api_search_article_ids(search_query)
 			if type(api_response) != list and api_response.status_code == 414:
@@ -128,7 +45,6 @@ if __name__=='__main__':
 				search_query = create_scientific_name_union_common_names_query(row)
 				api_response = pmc_api_search_article_ids(search_query)
 				if type(api_response) != list and api_response.status_code == 414:
-					"I am in"
 					list_of_smaller_search_queries = decompose_scientific_name_union_common_names_query(row)
 					api_response = pmc_multiple_api_call(list_of_smaller_search_queries)
 					print(api_response)
@@ -191,22 +107,21 @@ if __name__=='__main__':
 	# citations_file.close()
 
 
-	# with open('NAm_Rodent_Lit_Search_Genus.csv', 'w', newline='') as f:
-	# 	fieldnames = ['genus.x', 'Genus synonyms', 'Main common name', 'Other common names', 'Excluded names', 'PubMed Central search query', 'Search result', 'Filename']
-	# 	writer = csv.DictWriter(f, fieldnames=fieldnames)
-	# 	writer.writeheader()
+	with open('NAm_Rodent_Lit_Search_Genus.csv', 'w', newline='') as f:
+		fieldnames = ['genus.x', 'Genus synonyms', 'Main common name', 'Other common names', 'Excluded names', 'PubMed Central search query', 'Search result']
+		writer = csv.DictWriter(f, fieldnames=fieldnames)
+		writer.writeheader()
 		
-	# 	for key, value in updated_file.items():
-	# 		genus = key
-	# 		genus_syns = value[1]
-	# 		main_common_name = value[2]
-	# 		other_common_name = value[3]
-	# 		excluded_names = value[4]
-	# 		search_query = value[5]
-	# 		result = len(value[6])
-	# 		filename = value[7]
-	# 		writer.writerow({'genus.x': genus, 'Genus synonyms':genus_syns, 'Main common name': main_common_name, 'Other common names': other_common_name, 
-	# 						'Excluded names': excluded_names, 'PubMed Central search query': search_query, 'Search result': result, 'Filename':filename})
+		for key, value in response_to_queries.items():
+			genus = key
+			genus_syns = value[1]
+			main_common_name = value[2]
+			other_common_name = value[3]
+			excluded_names = value[4]
+			search_query = value[5]
+			result = len(list(set(value[6])))
+			writer.writerow({'genus.x': genus, 'Genus synonyms':genus_syns, 'Main common name': main_common_name, 'Other common names': other_common_name, 
+							'Excluded names': excluded_names, 'PubMed Central search query': search_query, 'Search result': result})
 
 
 
