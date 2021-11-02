@@ -23,7 +23,7 @@ def pmc_api_search_article_ids(search_query):
 		if response.status_code == 414:
 			return response
 		response_id_list = [int(idx) for idx in response.json()['esearchresult']['idlist']]
-		return response_id_list
+		return list(set(response_id_list))
 	except JSONDecodeError as e:
 		print(e)
 		return ("Error: JSONDecodeError")
@@ -50,6 +50,8 @@ def pmc_multiple_api_call(search_query_list):
 			response_id_list.extend([int(idx) for idx in response.json()['esearchresult']['idlist']])
 		except JSONDecodeError as e:
 			print(e)
+		except requests.exceptions.RequestException as e:
+			raise SystemExit(e)
 
 	return list(set(response_id_list))
 
