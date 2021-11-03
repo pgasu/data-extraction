@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import math
+import math, copy
 from api_call import pmc_api_search_article_ids, pmc_multiple_api_call
 
 def query_database(list_of_dicts, database):
@@ -9,23 +9,33 @@ def query_database(list_of_dicts, database):
 	genus_with_more_than_threshold_results = []
 
 	# Haven't included code for querying multiple databases
+	merged_rows_with_same_genus = {}
 
 	for row in list_of_dicts:
-	# If a genus has already been queried, then we let it pass for subsequent rows - the same genus may appear in multiple rows as each row represents a specific species
-		if row['genus.x'] in query_response or row['genus.x'] in genus_with_more_than_threshold_results:
-			continue
+		if row['genus.x'] in merged_rows_with_same_genus:
+			if row['Main common name'] != '': merged_rows_with_same_genus[row['genus.x']]['Main common name'] += '|'+row['Main common name']
+			if row['Other common names'] != '': merged_rows_with_same_genus[row['genus.x']]['Other common names'] += '|'+row['Other common names'] 
+		else:
+			merged_rows_with_same_genus[row['genus.x']] = copy.deepcopy(row)
 
-		search_query = create_genus_union_common_names_query(row)
+	for key, value in merged_rows_with_same_genus.items():
+	# If a genus has already been queried, then we let it pass for subsequent rows - the same genus may appear in multiple rows as each row represents a specific species
+		if value['genus.x'] in query_response or value['genus.x'] in genus_with_more_than_threshold_results:
+			print("there must be some error")
+			print(value['genus.x'])
+			break
+
+		search_query = create_genus_union_common_names_query(value)
 		api_response = pmc_api_search_article_ids(search_query)
 		if type(api_response) != list and api_response.status_code == 414:
-			list_of_smaller_search_queries = decompose_genus_union_common_names_query(row)
+			list_of_smaller_search_queries = decompose_genus_union_common_names_query(value)
 			api_response = pmc_multiple_api_call(list_of_smaller_search_queries)
 
 		if type(api_response)==list and len(api_response)>500:
-			genus_with_more_than_threshold_results.append(row['genus.x'])
+			genus_with_more_than_threshold_results.append(value['genus.x'])
 		else:
-			query_response[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], row['Main common name'], row['Other common names'], \
-													row['Excluded names'], search_query, api_response]
+			query_response[value['genus.x']] = [value['genus.x'], value['Genus synonyms'], value['Main common name'], value['Other common names'], \
+													value['Excluded names'], search_query, api_response]
 
 	for row in list_of_dicts:
 		if row['genus.x'] in genus_with_more_than_threshold_results:

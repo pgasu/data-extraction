@@ -7,7 +7,6 @@ from json import JSONDecodeError
 api_key = '310a232c07175b642551785374fdecd7e508'
 
 def pmc_api_search_article_ids(search_query):
-
 	parameters = {
 		'tool':'Data_extraction/0.1.0',
 		'email':'pgupt109@asu.edu',
@@ -51,6 +50,7 @@ def pmc_multiple_api_call(search_query_list):
 		except JSONDecodeError as e:
 			print(e)
 		except requests.exceptions.RequestException as e:
+			print("i am here")
 			raise SystemExit(e)
 
 	return list(set(response_id_list))
