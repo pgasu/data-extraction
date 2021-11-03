@@ -19,11 +19,6 @@ def query_database(list_of_dicts, database):
 			merged_rows_with_same_genus[row['genus.x']] = copy.deepcopy(row)
 
 	for key, value in merged_rows_with_same_genus.items():
-	# If a genus has already been queried, then we let it pass for subsequent rows - the same genus may appear in multiple rows as each row represents a specific species
-		if value['genus.x'] in query_response or value['genus.x'] in genus_with_more_than_threshold_results:
-			print("there must be some error")
-			print(value['genus.x'])
-			break
 
 		search_query = create_genus_union_common_names_query(value)
 		api_response = pmc_api_search_article_ids(search_query)
@@ -44,13 +39,13 @@ def query_database(list_of_dicts, database):
 			if type(api_response) != list and api_response.status_code == 414:
 				list_of_smaller_search_queries = decompose_scientific_name_union_common_names_query(row)
 				api_response = pmc_multiple_api_call(list_of_smaller_search_queries)
-				print(api_response)
 
 			if row['genus.x'] in query_response:
-				query_response[row['genus.x']][6].extend(api_response)
+				unique_ids = list(set(query_response[row['genus.x']][6] + api_response))
+				query_response[row['genus.x']][6] = unique_ids
 			else:
-				query_response[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], row['Main common name'], row['Other common names'], \
-													row['Excluded names'], search_query, api_response]
+				query_response[row['genus.x']] = [row['genus.x'], row['Genus synonyms'], merged_rows_with_same_genus[row['genus.x']]['Main common name'], \
+													merged_rows_with_same_genus[row['genus.x']]['Other common names'], row['Excluded names'], '', api_response]
 
 	return query_response
 
