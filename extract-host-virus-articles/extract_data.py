@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 
-import requests
-import os
-import csv
-import time
+import requests, os, csv, time, argparse
 import pandas as pd
 from requests.exceptions import ConnectionError
 from query import query_database
@@ -12,6 +9,21 @@ from csv_util import standardize_csvfile
 
 #Query PMC and download citations of resulting articles as .ris file for each genus
 if __name__=='__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--input', help='name of input file. The file must contain the fields to be queried')
+	parser.add_argument('--excluded', help='name of file containing genus/species/common names to be excluded')
+	parser.add_argument('--query-type', choices=['q1', 'q2', 'q3', 'q4', 'q5'], help="""Type of search queries to use: 
+						q1: genus name, 
+						q2: genus name OR genus synonyms, 
+						q3: genus name OR genus synonyms or common names, 
+						q4: scientific name OR synonyms(combinations of genus and epithet synonyms), 
+						q5: scientific name or synonyms or common names""")
+	parser.add_argument('--database-list', nargs='*', help='list of databases to be queried, e.g. ["pmc", "pubmed", "scopus", "Google Scholar"]')
+
+	args=parser.parse_args()
+	input_file = args.input
+	if input_file == None: input_file = 'MDD_v1.6_allSynonyms_NAm_Rodentia.csv'
+
 
 	standardize_csvfile('MDD_v1.6_allSynonyms_NAm_Rodentia.csv', 'MDD_genus_syn_8Oct2021_NAmRodentia.csv', 'NAm_Rodent_Excluded_Names.csv')
 

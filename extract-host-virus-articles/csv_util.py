@@ -2,7 +2,7 @@
 
 import csv
 
-def standardize_csvfile(filename1, filename2, filename3):
+def process_csv(filename1, filename2, filename3):
 
 	standard_file_content = read_standard_columns_from_csvfile(filename1)
 	genus_synonyms = extract_genus_synonyms(filename2)
