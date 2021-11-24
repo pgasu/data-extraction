@@ -54,3 +54,22 @@ def pmc_multiple_api_call(search_query_list):
 
 	return list(set(response_id_list))
 
+def scopus_api_search_article_ids(search_query):
+	print(search_query)
+	parameters = {
+		'apiKey':'a4a02608fd7272ed2b8312efad849197',
+		'httpAccept':'application/json',
+		'query': search_query,
+		}
+
+	try:
+		response = requests.get('https://api.elsevier.com/content/search/scopus', params=parameters)
+		if response.status_code == 414:
+			return response
+		print(response.content)
+		# response_id_list = [int(idx) for idx in response.json()['esearchresult']['idlist']]
+		# return list(set(response_id_list))
+	except JSONDecodeError as e:
+		print(e)
+		return ("Error: JSONDecodeError")
+
