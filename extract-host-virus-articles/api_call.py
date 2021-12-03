@@ -1,75 +1,99 @@
 #!/usr/bin/env python3
 
-import requests
-from requests.exceptions import ConnectionError
+import requests, sys
+from requests.exceptions import ConnectionError, RequestException
 from json import JSONDecodeError
+from pybliometrics.scopus import ScopusSearch
+from pybliometrics.scopus.exception import ScopusQueryError, Scopus413Error, Scopus414Error, Scopus400Error, ScopusException
 
-api_key = '310a232c07175b642551785374fdecd7e508'
+ncbi_api_key = '310a232c07175b642551785374fdecd7e508'
+scopus_api_key = '5e68ee44da76623e6cb1394e409930d2'
 
-def pmc_api_search_article_ids(search_query):
+def search_database(search_query, db):
+	if db=='scopus':
+		response = search_scopus_articles(search_query)
+	else:
+		response = search_ncbi_articles(search_query, db)
+	return response
+
+def search_ncbi_articles(search_query, db):
 	parameters = {
 		'tool':'Data_extraction/0.1.0',
 		'email':'pgupt109@asu.edu',
-		'api_key':api_key,
-		'db': 'pubmed',
+		'api_key':ncbi_api_key,
+		'db': db,
 		'term': search_query,
 		'retmax':100000,
 		'retmode':'json'	
 		}
-
 	try:
 		response = requests.post('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', params=parameters)
-		if response.status_code == 414:
-			return response
-		response_id_list = [int(idx) for idx in response.json()['esearchresult']['idlist']]
-		return list(set(response_id_list))
+		return response
 	except JSONDecodeError as e:
-		print(e)
-		return ("Error: JSONDecodeError")
+		raise SystemExit(e)
+	except ConnectionError as e:
+		raise SystemExit(e)
+	except RequestException as e:
+		raise SystemExit(e)
 
-
-def pmc_multiple_api_call(search_query_list):
-
-	response_id_list = []
-
-	for search_query in search_query_list:
-
-		parameters = {
-			'tool':'Data_extraction/0.1.0',
-			'email':'pgupt109@asu.edu',
-			'api_key':api_key,
-			'db': 'pubmed',
-			'term': search_query,
-			'retmax':100000,
-			'retmode':'json'	
-			}
-
-		try:
-			response = requests.post('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', params=parameters)
-			response_id_list.extend([int(idx) for idx in response.json()['esearchresult']['idlist']])
-		except JSONDecodeError as e:
-			print(e)
-		except requests.exceptions.RequestException as e:
-			raise SystemExit(e)
-
-	return list(set(response_id_list))
-
-def scopus_api_search_article_ids(search_query):
-	print(search_query)
-	parameters = {
-		'apiKey':'a4a02608fd7272ed2b8312efad849197',
-		'httpAccept':'application/json',
-		'query': search_query,
+def get_ncbi_citation(id_list, db):
+	headers = {
+		'tool':'Data_extraction/0.1.0',
+		'email':'pgupt109@asu.edu'
 		}
-
+	params = {
+		'id': id_list,
+		'download':'Y',
+		'format':'ris'
+		}
 	try:
-		response = requests.get('https://api.elsevier.com/content/search/scopus', params=parameters)
-		if response.status_code == 414:
-			return response
-		print(response.content)
-		# response_id_list = [int(idx) for idx in response.json()['esearchresult']['idlist']]
-		# return list(set(response_id_list))
-	except JSONDecodeError as e:
+		response = requests.get(f'https://api.ncbi.nlm.nih.gov/lit/ctxp/v1/{db}', params=params, headers=headers)
+		if response.status_code != 200:
+			print(f'{response}')
+			sys.exit()
+		return response.content
+	except ConnectionError as e:
 		print(e)
-		return ("Error: JSONDecodeError")
+		return False
 
+def search_scopus_articles(search_query):
+
+	# parameters = {
+	# 	'apiKey':scopus_api_key,
+	# 	'httpAccept':'application/json',
+	# 	'view': 'COMPLETE',
+	# 	'query': search_query,
+	# 	}
+	print("start")
+	param1 = {
+		'apiKey':scopus_api_key,
+		'view': 'COMPLETE',
+		'query': search_query,
+		'download': False,
+		'subscriber': True,
+	}
+	param2 = {
+		'apiKey':scopus_api_key,
+		'view': 'COMPLETE',
+		'query': search_query,
+		'subscriber': True,
+	}
+	try:
+		api_response = ScopusSearch(**param1)
+		print("end")
+		if api_response.get_results_size() > 500 or api_response.get_results_size()==0:
+			return api_response.get_results_size()
+		else:
+			api_response = ScopusSearch(**param2)
+			return api_response.results
+	except ScopusQueryError as e:
+		print(f'Scopus query error - {e}')
+		return False
+	except (Scopus413Error, Scopus414Error, Scopus400Error) as e:
+		print(e)
+		return False
+	except ScopusException as e:
+		print("in api call")
+		print(search_query)
+		print(e)
+		return e

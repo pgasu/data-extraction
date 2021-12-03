@@ -11,7 +11,7 @@ def process_csv(filename1, filename2, filename3):
 #	Create a new file for species lumping all synonyms for each species in a single row
 
 	with open('NAm_Rodent_Lit_Search.csv', 'w', newline='') as f:
-		fieldnames = ['genus.x', 'specificEpithet.x', 'Genus synonyms', 'Epithet synonyms', 'Synonym edits', 'Main common name', 'Other common names', 'Excluded names']
+		fieldnames = ['genus', 'specificEpithet', 'genusSynonym', 'epithetSynonym', 'mainCommonName', 'otherCommonName', 'excludedName']
 		writer = csv.DictWriter(f, fieldnames=fieldnames)
 		writer.writeheader()
 		
@@ -22,8 +22,8 @@ def process_csv(filename1, filename2, filename3):
 			main_common_name = value[1]
 			other_common_name = value[2]
 			exc_names = excluded_names[key] if key in excluded_names else ''
-			writer.writerow({'genus.x': genus, 'specificEpithet.x': epithet, 'Genus synonyms':genus_syns, 'Epithet synonyms':epithet_synonyms,
-			 				'Main common name': main_common_name, 'Other common names': other_common_name, 'Excluded names': exc_names})
+			writer.writerow({'genus': genus, 'specificEpithet': epithet, 'genusSynonym':genus_syns, 'epithetSynonym':epithet_synonyms,
+			 				'mainCommonName': main_common_name, 'otherCommonName': other_common_name, 'excludedName': exc_names})
 
 def read_standard_columns_from_csvfile(filename):
 
