@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import math, copy, ssl, sys
 from api_call import search_database, get_ncbi_citation
 from scholarly import scholarly, ProxyGenerator
@@ -8,16 +7,15 @@ from itertools import product
 from collections import namedtuple
 from requests.exceptions import ConnectionError
 
-
 # q1 - genus union common names query
 # q2 - scientific name union common names query
 
 def query_database(species_records, database):
-# Haven't yet included code for querying multiple databases
 	GenusRecord = namedtuple('GenusRecord', 'genus, genusSynonym, mainCommonName, otherCommonName, excludedName')
 	genus_records = []
-	genus_gt_threshold = [] #genera whose queries result in greater than threshold number of articles (500)
 
+# By default, we aim to query a database for each genus without species details (specificEpithet or epithetSynonym), 
+# so we lump the input species_records and create genus-level records
 	for record in species_records:
 		idx = record_exists(genus_records, record.genus)
 		if not idx:
@@ -26,13 +24,15 @@ def query_database(species_records, database):
 		else:
 			mcn = genus_records[idx].mainCommonName if record.mainCommonName == '' else f'{genus_records[idx].mainCommonName}|{record.mainCommonName}'
 			ocn = genus_records[idx].otherCommonName if record.otherCommonName == '' else f'{genus_records[idx].otherCommonName}|{record.otherCommonName}'
-			new_record = genus_records[idx]._replace(mainCommonName=mcn, otherCommonName=ocn)
+			exn = genus_records[idx].excludedName if record.excludedName == '' else f'{genus_records[idx].excludedName}|{record.excludedName}'
+			new_record = genus_records[idx]._replace(mainCommonName=mcn, otherCommonName=ocn, excludedName=exn)
 			genus_records.append(new_record)
 			genus_records.pop(idx)
 
-	response_report = []
+	genus_gt_threshold = [] # list of genera whose queries result in number of articles greater than the threshold limit (500)
 	QueryResponse = namedtuple('QueryResponse', 'genus, genusSynonym, specificEpithet, epithetSynonym, mainCommonName, \
-								otherCommonName, excludedName, searchQuery, apiResponse')
+						otherCommonName, excludedName, searchQuery, apiResponse')
+	response_report = []	# list of QueryResponse - search report for genus-level queries, followed by species-level queries if the initial search is too broad
 
 	if database == 'google scholar':
 		print('inside the loop')
@@ -89,7 +89,7 @@ def query_database(species_records, database):
 														merged_rows_with_same_genus[row['genus.x']]['Other common names'], \
 														row['Excluded names'], search_query_list, bibtex_list]
 
-	if database == 'scopus':
+	elif database == 'scopus':
 		scopus_documents = []
 		for record in genus_records:
 			search_query = create_q1(record)
@@ -171,20 +171,20 @@ def query_database(species_records, database):
 
 		generate_scopus_citations(list(set(scopus_documents)))
 
-	if database == 'pmc' or database == 'pubmed':
+	elif database in ['pmc', 'pubmed']:
 		for record in genus_records:
 			search_query = create_q1(record)
 			api_response = search_database(search_query, database)
-			response_list = []
+			output_articles_ids = []	# list of resulting articles' ids for a genus record
 			queries = ''
 			if api_response.status_code == 200:
-				response_list = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
-			elif api_response.status_code == 414:
+				output_articles_ids = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
+			elif api_response.status_code == 414:	# error corresponding to long search query
 				queries = decompose_q1(record)
 				for query in queries:
 					api_response = search_database(query, database)
 					if api_response.status_code == 200:
-						response_list.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])	
+						output_articles_ids.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])	
 					else:
 						print(f'{record.genus} - {api_response.status_code}')
 						sys.exit()
@@ -192,31 +192,31 @@ def query_database(species_records, database):
 				print(f'{record.genus} - {api_response.status_code}')
 				sys.exit()
 
-			if len(response_list) > 500:
+			if len(output_articles_ids) > 500:
 				genus_gt_threshold.append(record.genus)
 			else:
 				response_report.append(QueryResponse(specificEpithet='',epithetSynonym='',searchQuery=search_query if not queries else "|".join(queries),\
-														apiResponse=response_list, **record._asdict()))
-		query_list = []
+														apiResponse=output_articles_ids, **record._asdict()))
+		# query_list = []
 		for record in species_records:
 			if record.genus in genus_gt_threshold:
 				search_query = create_q2(record)
 				api_response = search_database(search_query, database)
-				response_list = []
+				output_articles_ids = []
 				queries=''
 				if api_response.status_code == 200:
-					response_list = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
-					if len(response_list)>500:
-						query_list.append(search_query)
+					output_articles_ids = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
+					# if len(output_articles_ids)>500:
+					# 	query_list.append(search_query)
 				elif api_response.status_code == 414:
 					queries = decompose_q2(record)
 					for query in queries:
 						api_response = search_database(query, database)
 						if api_response.status_code == 200:
-							count = len([int(idx) for idx in api_response.json()['esearchresult']['idlist']])
-							if count>500:
-								query_list.append(query)
-							response_list.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])	
+							# count = len([int(idx) for idx in api_response.json()['esearchresult']['idlist']])
+							# if count>500:
+							# 	query_list.append(query)
+							output_articles_ids.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])	
 						else:
 							print(f'{record.genus} - {api_response.status_code}')
 							sys.exit()
@@ -226,9 +226,9 @@ def query_database(species_records, database):
 
 				idx = record_exists(response_report, record.genus)
 				if not idx:
-					response_report.append(QueryResponse(searchQuery=search_query if not queries else "|".join(queries), apiResponse=response_list, **record._asdict()))
+					response_report.append(QueryResponse(searchQuery=search_query if not queries else "|".join(queries), apiResponse=output_articles_ids, **record._asdict()))
 				else:
-					unique_ids = list(set(response_report[idx].apiResponse + response_list))
+					unique_ids = list(set(response_report[idx].apiResponse + output_articles_ids))
 					sq = f'{response_report[idx].searchQuery}|{search_query if not queries else "|".join(queries)}'
 					se = f'{response_report[idx].specificEpithet}|{record.specificEpithet}'
 					es = f'{response_report[idx].epithetSynonym}|{record.epithetSynonym}'
@@ -239,6 +239,9 @@ def query_database(species_records, database):
 		for query in query_list:
 			print(query)
 		generate_citation_file(response_report, database)
+
+	else:
+		sys.exit(f'Database {database} search not yet supported')
 
 	return response_report
 
