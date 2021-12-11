@@ -24,7 +24,7 @@ def search_ncbi_articles(search_query, db):
 		'db': db,
 		'term': search_query,
 		'retmax':100000,
-		'retmode':'json'	
+		'retmode':'json',
 		}
 	try:
 		response = requests.post('https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi', params=parameters)
@@ -39,12 +39,12 @@ def search_ncbi_articles(search_query, db):
 def get_ncbi_citation(id_list, db):
 	headers = {
 		'tool':'Data_extraction/0.1.0',
-		'email':'pgupt109@asu.edu'
+		'email':'pgupt109@asu.edu',
 		}
 	params = {
 		'id': id_list,
 		'download':'Y',
-		'format':'ris'
+		'format':'ris',
 		}
 	try:
 		response = requests.get(f'https://api.ncbi.nlm.nih.gov/lit/ctxp/v1/{db}', params=params, headers=headers)
@@ -58,13 +58,6 @@ def get_ncbi_citation(id_list, db):
 
 def search_scopus_articles(search_query):
 
-	# parameters = {
-	# 	'apiKey':scopus_api_key,
-	# 	'httpAccept':'application/json',
-	# 	'view': 'COMPLETE',
-	# 	'query': search_query,
-	# 	}
-	print("start")
 	param1 = {
 		'apiKey':scopus_api_key,
 		'view': 'COMPLETE',
@@ -80,7 +73,6 @@ def search_scopus_articles(search_query):
 	}
 	try:
 		api_response = ScopusSearch(**param1)
-		print("end")
 		if api_response.get_results_size() > 500 or api_response.get_results_size()==0:
 			return api_response.get_results_size()
 		else:
