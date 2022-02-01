@@ -6,7 +6,7 @@ def process_csv(filename1, filename2, filename3):
 
 	standard_file_content = read_standard_columns_from_csvfile(filename1)
 	genus_synonyms = extract_genus_synonyms(filename2)
-	excluded_names = extract_excluded_names(filename3)
+	excluded_names = {} #extract_excluded_names(filename3)
 
 #	Create a new file for species lumping all synonyms for each species in a single row
 
@@ -33,11 +33,12 @@ def read_standard_columns_from_csvfile(filename):
 		rows = csv.DictReader(f)
 		for row in rows:
 			genus_epithet = row['genus.x'] + " " + row['specificEpithet.x']
+			epithet_synonyms = '|'.join([' '.join(syn.split('_')) for syn in row['synonym'].split('|')])
 
 			if genus_epithet in genus_epithet_details:
-				genus_epithet_details[genus_epithet][0] += "|" + row['synonym']
+				genus_epithet_details[genus_epithet][0] += "|" + epithet_synonyms
 			else:
-				genus_epithet_details[genus_epithet] = [row['synonym'], row['mainCommonName'], row['otherCommonNames']]
+				genus_epithet_details[genus_epithet] = [epithet_synonyms, row['mainCommonName'], row['otherCommonNames']]
 
 	return genus_epithet_details
 
