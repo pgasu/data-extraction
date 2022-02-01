@@ -92,152 +92,197 @@ def query_database(species_records, database):
 	elif database == 'scopus':
 		scopus_documents = []
 		for record in genus_records:
-			search_query = create_q1(record)
-			api_response = search_database(search_query, database)
+			search_queries = create_scopus_q1(record)
 			response_length = 0
 			response_list = []
-			queries = ''
-			if type(api_response) == list:
-				response_list.extend(api_response)
-				response_length = len(api_response)
-			elif type(api_response) == int:
-				response_length = api_response
-			elif api_response == False:
-				queries = decompose_q1(record)
-				for query in queries:
+			for query in search_queries:
+				api_response = search_database(query, database)
+				if type(api_response) == list:
+					response_list.extend(api_response)
+					response_length += len(api_response)
+				elif type(api_response) == int:
+					response_length += api_response
+				elif api_response == False:
+					sys.exit('one of the other errors')
+				else:
+					sys.exit('Unexpected response from scopus API call')
+						
+			if response_length > 500:
+				genus_gt_threshold.append(record.genus)
+			else:
+				scopus_documents.extend(response_list)
+				response_report.append(QueryResponse(specificEpithet='',epithetSynonym='',searchQuery="|".join(search_queries),\
+														apiResponse=response_length, **record._asdict()))
+
+		print(genus_gt_threshold)
+
+		species_response_report = {}
+		for record in species_records:
+			if record.genus in genus_gt_threshold:
+				search_queries = create_scopus_q2(record)
+				response_length = 0
+				response_list = []
+				for query in search_queries:
 					api_response = search_database(query, database)
 					if type(api_response) == list:
 						response_list.extend(api_response)
 						response_length += len(api_response)
 					elif type(api_response) == int:
 						response_length += api_response
+					elif api_response == False:
+						sys.exit('one of the other errors')
 					else:
 						sys.exit('Unexpected response from scopus API call')
-			else:
-				sys.exit('Unexpected response from scopus API call')
-						
-			if response_length > 500:
-				genus_gt_threshold.append(record.genus)
-			else:
-				scopus_documents.extend(response_list)
-				response_report.append(QueryResponse(specificEpithet='',epithetSynonym='',searchQuery=search_query if not queries else "|".join(queries),\
-														apiResponse=response_length, **record._asdict()))
-
-		species_response_report = {}
-		for record in species_records:
-			if record.genus in genus_gt_threshold:
-				search_query = create_q2(record)
-				api_response = search_database(search_query, database)
-				response_length = 0
-				response_list = []
-				queries = ''
-				if type(api_response) == list:
-					response_list.extend(api_response)
-					response_length = len(api_response)
-				elif type(api_response) == int:
-					response_length = api_response
-				elif api_response == False:
-					queries = decompose_q2(record)
-					for query in queries:
-						api_response = search_database(query, database)
-						if type(api_response) == list:
-							response_list.extend(api_response)
-							response_length += len(api_response)
-						elif type(api_response) == int:
-							response_length += api_response
-						else:
-							sys.exit('Unexpected response from scopus API call')
-				else:
-					sys.exit('Unexpected response from scopus API call')
 
 				if record.genus not in species_response_report:
-					species_response_report[record.genus] = [response_list, QueryResponse(searchQuery=search_query if not queries else "|".join(queries), \
+					species_response_report[record.genus] = [response_list, QueryResponse(searchQuery="|".join(search_queries), \
 																apiResponse=response_length, **record._asdict())]
 				else:
 					if response_list:
 						species_response_report[record.genus][0] = list(set(species_response_report[record.genus][0] + response_list))
 					updated_length = len(species_response_report[record.genus][0])
-					sq = f'{species_response_report[record.genus][1].searchQuery}|{search_query if not queries else "|".join(queries)}'
+					sq = f'{species_response_report[record.genus][1].searchQuery}|{"|".join(search_queries)}'
 					se = f'{species_response_report[record.genus][1].specificEpithet}|{record.specificEpithet}'
 					es = f'{species_response_report[record.genus][1].epithetSynonym}|{record.epithetSynonym}'
 					new_record = species_response_report[record.genus][1]._replace(specificEpithet=se, epithetSynonym=es, apiResponse=updated_length, searchQuery=sq)
 					species_response_report[record.genus].pop(1)
 					species_response_report[record.genus].append(new_record)
 
+		print(len(species_response_report))
 		for item in species_response_report.items():
 			if item[1][1].apiResponse < 500:
+				print('many docs')
 				scopus_documents.extend(item[1][0])
 			response_report.append(item[1][1])
 
 		generate_scopus_citations(list(set(scopus_documents)))
 
 	elif database in ['pmc', 'pubmed']:
+		troublesome_terms = []
+		print("round 1")
 		for record in genus_records:
-			search_query = create_q1(record)
-			api_response = search_database(search_query, database)
 			output_articles_ids = []	# list of resulting articles' ids for a genus record
-			queries = ''
-			if api_response.status_code == 200:
-				output_articles_ids = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
-			elif api_response.status_code == 414:	# error corresponding to long search query
-				queries = decompose_q1(record)
-				for query in queries:
-					api_response = search_database(query, database)
-					if api_response.status_code == 200:
-						output_articles_ids.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])	
+			search_queries = create_q1(record, database)
+			for query in search_queries:
+				api_response = search_database(query, database)
+				if api_response.status_code == 200:
+					output = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
+					if database=='pmc' and len(output) > 200:
+						new_terms = find_troublesome_terms(query, database)
+						if new_terms and not all(term in troublesome_terms for term in new_terms):
+							troublesome_terms.extend(new_terms)
+							troublesome_terms = list(set(troublesome_terms))
+							for term in troublesome_terms:
+								query = query.replace(f'"{term}"[Body - Key Terms]', f'"{term}"[Title]')
+							api_response = search_database(query, database)
+							if api_response.status_code == 200:
+								output_articles_ids.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])
+							else:
+								print(f'{record.genus} - {api_response.status_code}')
+								sys.exit()
+						else:
+							output_articles_ids.extend(output)
+					elif database=='pubmed' and len(output) > 500:
+						new_terms = find_troublesome_terms(query, database)
+						troublesome_terms.extend(new_terms)
+						troublesome_terms = list(set(troublesome_terms))
+						output_articles_ids.extend(output)
 					else:
-						print(f'{record.genus} - {api_response.status_code}')
-						sys.exit()
-			else:
-				print(f'{record.genus} - {api_response.status_code}')
-				sys.exit()
-
+						output_articles_ids.extend(output)
+				else:
+					print(f'{record.genus} - {api_response.status_code}')
+					print(f'{query}')
+					sys.exit()
+			output_articles_ids = list(set(output_articles_ids))
 			if len(output_articles_ids) > 500:
 				genus_gt_threshold.append(record.genus)
 			else:
-				response_report.append(QueryResponse(specificEpithet='',epithetSynonym='',searchQuery=search_query if not queries else "|".join(queries),\
-														apiResponse=output_articles_ids, **record._asdict()))
-		# query_list = []
+				response_report.append(QueryResponse(specificEpithet='',epithetSynonym='',searchQuery="|".join(search_queries),\
+									apiResponse=output_articles_ids, **record._asdict()))
+
+		print(f'Genus resulting articles more than threshold values: {genus_gt_threshold}')
+		print(f'Troublesome terms causing high volume of articles: {troublesome_terms}')
+		print("round 2")
+		for record in genus_records:
+			if record.genus in genus_gt_threshold:
+				output_articles_ids = []
+				search_queries = create_q1(record, database, troublesome_terms)
+				for query in search_queries:
+					api_response = search_database(query, database)
+					if api_response.status_code == 200:
+						output = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
+						output_articles_ids.extend(output)
+					else:
+						print(f'{record.genus} - {api_response.status_code}')
+						print(f'{query}')
+						sys.exit()
+				output_articles_ids = list(set(output_articles_ids))
+				if len(output_articles_ids) <= 500:
+					genus_gt_threshold.remove(record.genus)
+					response_report.append(QueryResponse(specificEpithet='',epithetSynonym='',searchQuery="|".join(search_queries),\
+										apiResponse=output_articles_ids, **record._asdict()))
+		
+		print(f'Genus resulting articles more than threshold values after round 2: {genus_gt_threshold}')
 		for record in species_records:
 			if record.genus in genus_gt_threshold:
-				search_query = create_q2(record)
-				api_response = search_database(search_query, database)
 				output_articles_ids = []
-				queries=''
-				if api_response.status_code == 200:
-					output_articles_ids = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
-					# if len(output_articles_ids)>500:
-					# 	query_list.append(search_query)
-				elif api_response.status_code == 414:
-					queries = decompose_q2(record)
-					for query in queries:
-						api_response = search_database(query, database)
-						if api_response.status_code == 200:
-							# count = len([int(idx) for idx in api_response.json()['esearchresult']['idlist']])
-							# if count>500:
-							# 	query_list.append(query)
-							output_articles_ids.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])	
+				search_queries = create_q2(record, database, troublesome_terms)
+				for query in search_queries:
+					api_response = search_database(query, database)
+					if api_response.status_code == 200:
+						output = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
+						if database=='pmc' and len(output) > 200:
+							print("I am in")
+							print(record.genus)
+							print(troublesome_terms)
+							print()
+							new_terms = find_troublesome_terms(query, database)
+							if new_terms and not all(term in troublesome_terms for term in new_terms):
+								troublesome_terms.extend(new_terms)
+								troublesome_terms = list(set(troublesome_terms))
+								for term in troublesome_terms:
+									query = query.replace(f'"{term}"[Body - Key Terms]', f'"{term}"[Title]')
+								api_response = search_database(query, database)
+								if api_response.status_code == 200:
+									output_articles_ids.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])
+								else:
+									print(f'{record.genus} - {api_response.status_code}')
+									sys.exit()
+							else:
+								output_articles_ids.extend(output)
+						elif database=='pubmed' and len(output) > 500:
+							new_terms = find_troublesome_terms(query, database)
+							troublesome_terms.extend(new_terms)
+							troublesome_terms = list(set(troublesome_terms))
+							for term in troublesome_terms:
+								query = query.replace(f'"{term}"[Title/Abstract] OR ', '')
+								if query.endswith(f'"{term}"[Title/Abstract]'):
+									query = query.replace(f'"{term}"[Title/Abstract]', '')
+							api_response = search_database(query, database)
+							if api_response.status_code == 200:
+								output_articles_ids.extend([int(idx) for idx in api_response.json()['esearchresult']['idlist']])
+							else:
+								print(f'{record.genus} - {api_response.status_code}')
+								sys.exit()
 						else:
-							print(f'{record.genus} - {api_response.status_code}')
-							sys.exit()
-				else:
-					print(f'{record.genus} - {api_response.status_code}')
-					sys.exit()
+							output_articles_ids.extend(output)
+					else:
+						print(f'{record.genus} - {api_response.status_code}')
+						sys.exit()
 
 				idx = record_exists(response_report, record.genus)
 				if not idx:
-					response_report.append(QueryResponse(searchQuery=search_query if not queries else "|".join(queries), apiResponse=output_articles_ids, **record._asdict()))
+					response_report.append(QueryResponse(searchQuery="|".join(search_queries), apiResponse=output_articles_ids, **record._asdict()))
 				else:
 					unique_ids = list(set(response_report[idx].apiResponse + output_articles_ids))
-					sq = f'{response_report[idx].searchQuery}|{search_query if not queries else "|".join(queries)}'
+					sq = f'{response_report[idx].searchQuery}|{"|".join(search_queries)}'
 					se = f'{response_report[idx].specificEpithet}|{record.specificEpithet}'
 					es = f'{response_report[idx].epithetSynonym}|{record.epithetSynonym}'
 					new_record = response_report[idx]._replace(specificEpithet=se, epithetSynonym=es, apiResponse=unique_ids, searchQuery=sq)
 					response_report.append(new_record)
 					response_report.pop(idx)
 
-		for query in query_list:
-			print(query)
+		print(f'Troublesome terms causing high volume of articles after round 3: {troublesome_terms}')
 		generate_citation_file(response_report, database)
 
 	else:
@@ -245,76 +290,152 @@ def query_database(species_records, database):
 
 	return response_report
 
-
-def create_q1(record):
-	excluded_names = record.excludedName.split('|')
-	synonyms = list(set([syn for syn in record.genusSynonym.split('|') if syn not in excluded_names] + [record.genus]))
-	common_names = f'{record.mainCommonName}|{record.otherCommonName}' if record.otherCommonName else record.mainCommonName
-	common_names = [name for name in set(common_names.split('|')) if name not in excluded_names]
-	options = synonyms + common_names
-	search_query = '(Virus OR viruses OR viral) AND ('
-
-	for name in options:
-		search_query += f'"{name}"[All Fields] OR '
-	search_query = f'{search_query[0:-4]})'
-
-	return search_query
-
-def decompose_q1(record):
+def create_q1(record, database, troublesome_terms=[]):
 	search_queries = []
-	excluded_names = record.excludedName.split('|')
-	synonyms = [syn for syn in record.genusSynonym.split('|') if syn not in excluded_names] + [record.genus]
+	synonyms = list(set(record.genusSynonym.split('|') + [record.genus]))
 	common_names = f'{record.mainCommonName}|{record.otherCommonName}' if record.otherCommonName else record.mainCommonName
-	common_names = [name for name in common_names.split('|') if name not in excluded_names]
-	options = synonyms + common_names
+	common_names = list(set(common_names.split('|')))
+	search_terms = synonyms + common_names
 	search_query = '(Virus OR viruses OR viral) AND ('
 
-	for name in options:
-		if len(search_query + f'"{name}"[All Fields] OR ') > 3000:
+	if database == 'pubmed':
+		for name in search_terms:
+			if name not in troublesome_terms:
+				if len(search_query + f'"{name}"[Title/Abstract] OR ') > 3000:
+					search_queries.append(f'{search_query[:-4]})')
+					search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Title/Abstract] OR '
+				else:
+					search_query += f'"{name}"[Title/Abstract] OR '
+	elif database=='pmc':
+		for name in search_terms:
+			if name in troublesome_terms:
+				if len(search_query + f'"{name}"[Abstract] OR "{name}"[Title] OR ') > 3000:
+					search_queries.append(f'{search_query[:-4]})')
+					search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Abstract] OR "{name}"[Title] OR '
+				else:
+					search_query += f'"{name}"[Abstract] OR "{name}"[Title] OR '
+			else:
+				if len(search_query + f'"{name}"[Abstract] OR "{name}"[Body - Key Terms] OR ') > 3000:
+					search_queries.append(f'{search_query[:-4]})')
+					search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Abstract] OR "{name}"[Body - Key Terms] OR '
+				else:
+					search_query += f'"{name}"[Abstract] OR "{name}"[Body - Key Terms] OR '
+
+	search_queries.append(f'{search_query[:-4]})')
+	return search_queries
+
+def create_scopus_q1(record, troublesome_terms=[]):
+	search_queries = []
+	synonyms = list(set(record.genusSynonym.split('|') + [record.genus]))
+	common_names = f'{record.mainCommonName}|{record.otherCommonName}' if record.otherCommonName else record.mainCommonName
+	common_names = list(set(common_names.split('|')))
+	search_terms = synonyms + common_names
+	search_terms = [i for i in search_terms if i]
+	search_query = 'TITLE-ABS-KEY(virus OR viruses OR viral AND '
+
+	for name in search_terms:
+		if len(search_query + f'{{{name}}} OR ') > 1000:
 			search_queries.append(f'{search_query[:-4]})')
-			search_query = f'(Virus OR viruses OR viral) AND ("{name}"[All Fields] OR '
+			search_query = f'TITLE-ABS-KEY(virus OR viruses OR viral AND {{{name}}} OR '
 		else:
-			search_query += f'"{name}"[All Fields] OR '
+			search_query += f'{{{name}}} OR '
+
+	search_queries.append(f'{search_query[:-4]})')
+	return search_queries
+
+def create_scopus_q2(record, troublesome_terms=[]):
+	search_queries = []
+	genus_synonyms = list(set(record.genusSynonym.split('|') + [record.genus]))
+	epithet_synonyms = list(set(record.epithetSynonym.split('|') + [record.specificEpithet]))
+	scientific_names = [f'{genus} {epithet}' for genus, epithet in product(genus_synonyms, epithet_synonyms)]
+	common_names = f'{record.mainCommonName}|{record.otherCommonName}' if record.otherCommonName else record.mainCommonName
+	common_names = list(set(common_names.split('|')))
+	search_terms = scientific_names + common_names
+	search_terms = [i for i in search_terms if i]
+	search_query = 'TITLE-ABS-KEY(virus OR viruses OR viral AND '
+
+	for name in search_terms:
+		if len(search_query + f'{{{name}}} OR ') > 1000:
+			search_queries.append(f'{search_query[:-4]})')
+			search_query = f'TITLE-ABS-KEY(virus OR viruses OR viral AND {{{name}}} OR '
+		else:
+			search_query += f'{{{name}}} OR '
+
+	search_queries.append(f'{search_query[:-4]})')
+	return search_queries
+
+def create_q2(record, database, troublesome_terms=[]):
+	search_queries = []
+	genus_synonyms = list(set(record.genusSynonym.split('|') + [record.genus]))
+	epithet_synonyms = list(set(record.epithetSynonym.split('|') + [record.specificEpithet]))
+	scientific_names = [f'{genus} {epithet}' for genus, epithet in product(genus_synonyms, epithet_synonyms)]
+	common_names = f'{record.mainCommonName}|{record.otherCommonName}' if record.otherCommonName else record.mainCommonName
+	common_names = list(set(common_names.split('|')))
+	search_terms = scientific_names + common_names
+	search_query = '(Virus OR viruses OR viral) AND ('
+
+	if database == 'pubmed':
+		for name in search_terms:
+			if len(search_query + f'"{name}"[Title/Abstract] OR ') > 3000:
+				search_queries.append(f'{search_query[:-4]})')
+				search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Title/Abstract] OR '
+			else:
+				search_query += f'"{name}"[Title/Abstract] OR '
+	elif database=='pmc':
+		for name in search_terms:
+			if name in troublesome_terms:
+				if len(search_query + f'"{name}"[Abstract] OR "{name}"[Title] OR ') > 3000:
+					search_queries.append(f'{search_query[:-4]})')
+					search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Abstract] OR "{name}"[Title] OR '
+				else:
+					search_query += f'"{name}"[Abstract] OR "{name}"[Title] OR '
+			else:
+				if len(search_query + f'"{name}"[Abstract] OR "{name}"[Body - Key Terms] OR ') > 3000:
+					search_queries.append(f'{search_query[:-4]})')
+					search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Abstract] OR "{name}"[Body - Key Terms] OR '
+				else:
+					search_query += f'"{name}"[Abstract] OR "{name}"[Body - Key Terms] OR '
+
 	search_queries.append(f'{search_query[:-4]})')
 
 	return search_queries
 
-def create_q2(record):
-	excluded_names = record.excludedName.split('|')
-	genus_synonyms = list(set([syn for syn in record.genusSynonym.split('|') if syn not in excluded_names] + [record.genus]))
-	epithet_synonyms = list(set([syn for syn in record.epithetSynonym.split('|') if syn not in excluded_names] + [record.specificEpithet]))
-	scientific_names = [f'{genus} {epithet}' for genus, epithet in product(genus_synonyms, epithet_synonyms)]
-	common_names = f'{record.mainCommonName}|{record.otherCommonName}' if record.otherCommonName else record.mainCommonName
-	common_names = [name for name in common_names.split('|') if name not in excluded_names]
-	options = scientific_names + common_names
-	search_query = '(Virus OR viruses OR viral) AND ('
+# def create_q2(record, database, troublesome_terms=[]):
+# 	search_queries = []
+# 	excluded_names = record.excludedName.split('|')
+# 	genus_synonyms = list(set([syn for syn in record.genusSynonym.split('|') if syn not in excluded_names] + [record.genus]))
+# 	epithet_synonyms = list(set([syn for syn in record.epithetSynonym.split('|') if syn not in excluded_names] + [record.specificEpithet]))
+# 	scientific_names = [f'{genus} {epithet}' for genus, epithet in product(genus_synonyms, epithet_synonyms) if f'{genus} {epithet}' not in excluded_names]
+# 	common_names = f'{record.mainCommonName}|{record.otherCommonName}' if record.otherCommonName else record.mainCommonName
+# 	common_names = [name for name in common_names.split('|') if name not in excluded_names]
+# 	options = scientific_names + common_names
+# 	search_query = '(Virus OR viruses OR viral) AND ('
 
-	for name in options:
-		search_query += f'"{name}"[All Fields] OR '
-	search_query = f'{search_query[0:-4]})'
+# 	if database == 'pubmed':
+# 		for name in options:
+# 			if len(search_query + f'"{name}"[Title/Abstract] OR ') > 3000:
+# 				search_queries.append(f'{search_query[:-4]})')
+# 				search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Title/Abstract] OR '
+# 			else:
+# 				search_query += f'"{name}"[Title/Abstract] OR '
+# 	else:
+# 		for name in options:
+# 			if name in troublesome_terms:
+# 				if len(search_query + f'"{name}"[Abstract] OR "{name}"[Title] OR ') > 3000:
+# 					search_queries.append(f'{search_query[:-4]})')
+# 					search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Abstract] OR "{name}"[Title] OR '
+# 				else:
+# 					search_query += f'"{name}"[Abstract] OR "{name}"[Title] OR '
+# 			else:
+# 				if len(search_query + f'"{name}"[Abstract] OR "{name}"[Body - Key Terms] OR ') > 3000:
+# 					search_queries.append(f'{search_query[:-4]})')
+# 					search_query = f'(Virus OR viruses OR viral) AND ("{name}"[Abstract] OR "{name}"[Body - Key Terms] OR '
+# 				else:
+# 					search_query += f'"{name}"[Abstract] OR "{name}"[Body - Key Terms] OR '
 
-	return search_query
+# 	search_queries.append(f'{search_query[:-4]})')
 
-def decompose_q2(record):
-	search_queries = []
-	excluded_names = record.excludedName.split('|')
-	genus_synonyms = list(set([syn for syn in record.genusSynonym.split('|') if syn not in excluded_names] + [record.genus]))
-	epithet_synonyms = list(set([syn for syn in record.epithetSynonym.split('|') if syn not in excluded_names] + [record.specificEpithet]))
-	scientific_names = [f'{genus} {epithet}' for genus, epithet in product(genus_synonyms, epithet_synonyms)]
-	common_names = f'{record.mainCommonName}|{record.otherCommonName}' if record.otherCommonName else record.mainCommonName
-	common_names = [name for name in common_names.split('|') if name not in excluded_names]
-	options = scientific_names + common_names
-	search_query = '(Virus OR viruses OR viral) AND ('
-
-	for name in options:
-		if len(search_query + f'"{name}"[All Fields] OR ') > 3000:
-			search_queries.append(f'{search_query[:-4]})')
-			search_query = f'(Virus OR viruses OR viral) AND ("{name}"[All Fields] OR '
-		else:
-			search_query += f'"{name}"[All Fields] OR '
-	search_queries.append(f'{search_query[:-4]})')
-
-	return search_queries
+# 	return search_queries
 
 def create_google_scholar_q1(row):
 	list_of_search_queries = []
@@ -367,6 +488,22 @@ def create_google_scholar_q2(row):
 
 	return list_of_search_queries
 
+def find_troublesome_terms(query, database):
+	troublesome_tms = []
+	query_terms = list(set(query.split('"')[1::2]))
+	if '' in query_terms: query_terms.remove('')
+
+	for each_term in query_terms:
+		if database == 'pmc':
+			search_query = f'(Virus OR viruses OR viral) AND ("{each_term}"[Abstract] OR "{each_term}"[Body - Key Terms]'
+		else:
+			search_query = f'(Virus OR viruses OR viral) AND ("{each_term}"[Title/Abstract]'
+		api_response = search_database(search_query, database)
+		if api_response.status_code == 200:
+			output = [int(idx) for idx in api_response.json()['esearchresult']['idlist']]
+			if len(output) > 200: troublesome_tms.append(each_term)
+	return troublesome_tms
+
 def record_exists(list_of_named_tuples, value):
 	for index, named_tuple in enumerate(list_of_named_tuples):
 		if value in named_tuple:
@@ -384,7 +521,9 @@ def generate_citation_file(response_report, db):
 		count = 0
 		while True:
 			missed_keys = False
+			# print(len(unique_ids))
 			for i in range(count, len(unique_ids), 25):
+				# print(i, i+25)
 				id_list = unique_ids[i:i+25]
 				response = get_ncbi_citation(id_list, db)
 				if not response:
@@ -438,9 +577,8 @@ def generate_scopus_citations(documents):
 					ris += f'KW  - {keyword}\n'
 			ris += 'ER  - \n\n'
 
+			if not title or not doi:
+				print(ris)
+				print()
+
 			citations_file.write(ris)
-        
-
-
-
-
