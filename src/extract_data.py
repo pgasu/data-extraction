@@ -21,19 +21,21 @@ if __name__=='__main__':
 	parser.add_argument('--database', default='scopus', help='database to be queried, e.g. "pmc", "pubmed", "scopus", "Google Scholar"')
 
 	args=parser.parse_args()
-	input_file = args.input
-	genus_syns = args.genus_synonyms
-	excluded = args.excluded
+	input_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data')
+
+	input_file = os.path.join(input_dir_path, args.input)
+	genus_syns = os.path.join(input_dir_path, args.genus_synonyms) 
+	excluded = os.path.join(input_dir_path, args.excluded)
 	database = args.database
 	process_csv(input_file, genus_syns, excluded)
 
-	with open('NAm_Rodent_Lit_Search.csv') as f:
+	with open(os.path.join(input_dir_path,'NAm_Rodent_Lit_Search.csv')) as f:
 		reader = csv.reader(f)
 		SpeciesRecord = namedtuple('SpeciesRecord', next(reader))
 		species_records = [SpeciesRecord(*row) for row in reader]
 		search_report = query_database(species_records, database)
 
-	with open('NAm_Rodent_Lit_Search_Report.csv', 'w', newline='') as f:
+	with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'../output/NAm_Rodent_Lit_Search_Report.csv'), 'w', newline='') as f:
 		writer = csv.DictWriter(f, fieldnames=search_report[0]._fields)
 		writer.writeheader()
 

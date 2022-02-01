@@ -10,7 +10,7 @@ def process_csv(filename1, filename2, filename3):
 
 #	Create a new file for species lumping all synonyms for each species in a single row
 
-	with open('NAm_Rodent_Lit_Search.csv', 'w', newline='') as f:
+	with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../output/NAm_Rodent_Lit_Search.csv'), 'w', newline='') as f:
 		fieldnames = ['genus', 'specificEpithet', 'genusSynonym', 'epithetSynonym', 'mainCommonName', 'otherCommonName', 'excludedName']
 		writer = csv.DictWriter(f, fieldnames=fieldnames)
 		writer.writeheader()
