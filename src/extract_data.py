@@ -22,20 +22,20 @@ if __name__=='__main__':
 
 	args=parser.parse_args()
 	input_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data')
-
+	output_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../output')
 	input_file = os.path.join(input_dir_path, args.input)
 	genus_syns = os.path.join(input_dir_path, args.genus_synonyms) 
 	excluded = os.path.join(input_dir_path, args.excluded)
 	database = args.database
 	process_csv(input_file, genus_syns, excluded)
 
-	with open(os.path.join(input_dir_path,'NAm_Rodent_Lit_Search.csv')) as f:
+	with open(os.path.join(output_dir_path,'NAm_Rodent_Lit_Search.csv')) as f:
 		reader = csv.reader(f)
 		SpeciesRecord = namedtuple('SpeciesRecord', next(reader))
 		species_records = [SpeciesRecord(*row) for row in reader]
 		search_report = query_database(species_records, database)
 
-	with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),'../output/NAm_Rodent_Lit_Search_Report.csv'), 'w', newline='') as f:
+	with open(os.path.join(output_dir_path,'NAm_Rodent_Lit_Search_Report.csv'), 'w', newline='') as f:
 		writer = csv.DictWriter(f, fieldnames=search_report[0]._fields)
 		writer.writeheader()
 
