@@ -6,8 +6,8 @@ from json import JSONDecodeError
 from pybliometrics.scopus import ScopusSearch
 from pybliometrics.scopus.exception import ScopusQueryError, Scopus413Error, Scopus414Error, Scopus400Error, ScopusException
 
-ncbi_api_key = '310a232c07175b642551785374fdecd7e508'
-scopus_api_key = '5e68ee44da76623e6cb1394e409930d2'
+ncbi_api_key = ''
+scopus_api_key = ''
 
 def search_database(search_query, db):
 	if db=='scopus':
